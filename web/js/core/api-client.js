@@ -48,6 +48,14 @@ var ApiClient = (function () {
         if (body) fetchOpts.body = JSON.stringify(body);
 
         return fetch(url, fetchOpts).then(function (resp) {
+            // Handle 401 - redirect to login
+            if (resp.status === 401) {
+                var authErr = new Error('Non authentifie');
+                authErr.status = 401;
+                EventBus.emit('auth:unauthorized');
+                throw authErr;
+            }
+
             if (!resp.ok) {
                 return resp.text().then(function (text) {
                     var err;
@@ -72,6 +80,12 @@ var ApiClient = (function () {
             return resp.text().then(function (text) {
                 return { type: 'text', data: text };
             });
+        }).catch(function (err) {
+            // Silently swallow AbortError (request was intentionally cancelled)
+            if (err.name === 'AbortError') {
+                return Promise.reject({ message: '', aborted: true, silent: true });
+            }
+            throw err;
         });
     }
 

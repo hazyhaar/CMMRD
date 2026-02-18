@@ -15,10 +15,12 @@ var State = (function () {
     };
 
     function get(key) {
+        if (!Object.prototype.hasOwnProperty.call(state, key)) return undefined;
         return state[key];
     }
 
     function set(key, value) {
+        if (!Object.prototype.hasOwnProperty.call(state, key)) return;
         state[key] = value;
         EventBus.emit('state:' + key, value);
     }

@@ -4,7 +4,8 @@
 -- ============================================================================
 
 -- Create dedicated schema
-CREATE USER cockpit IDENTIFIED BY "Ch4ng3M3!"
+-- NOTE: Replace &&cockpit_password with a secure password at install time
+CREATE USER cockpit IDENTIFIED BY "&&cockpit_password"
     DEFAULT TABLESPACE users
     TEMPORARY TABLESPACE temp
     QUOTA UNLIMITED ON users;
@@ -28,5 +29,4 @@ GRANT SELECT ON v_$tablespace TO cockpit;
 GRANT SELECT ON v_$datafile TO cockpit;
 GRANT SELECT ON v_$sga TO cockpit;
 
--- For ORDS
-GRANT CREATE ANY CONTEXT TO cockpit;
+-- For ORDS (ORDS sets CLIENT_IDENTIFIER automatically, no special grant needed)

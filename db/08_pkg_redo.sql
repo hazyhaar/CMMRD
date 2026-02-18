@@ -5,7 +5,6 @@
 -- ============================================================================
 
 CREATE OR REPLACE PACKAGE cockpit.cockpit_redo_pkg
-AUTHID CURRENT_USER
 AS
     -- Redo log groups (v$log)
     FUNCTION get_log_groups RETURN SYS_REFCURSOR;

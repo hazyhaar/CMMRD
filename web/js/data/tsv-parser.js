@@ -17,7 +17,8 @@ var TsvParser = (function () {
     function parse(tsv, columnsDef) {
         if (!tsv || typeof tsv !== 'string') return [];
 
-        var lines = tsv.split('\n');
+        // Normalize line endings: strip \r to handle \r\n from various sources
+        var lines = tsv.replace(/\r/g, '').split('\n');
         if (lines.length < 1) return [];
 
         // Header
@@ -67,7 +68,7 @@ var TsvParser = (function () {
      */
     function getHeaders(tsv) {
         if (!tsv) return [];
-        var firstLine = tsv.split('\n')[0];
+        var firstLine = tsv.replace(/\r/g, '').split('\n')[0];
         return firstLine ? firstLine.split('\t') : [];
     }
 

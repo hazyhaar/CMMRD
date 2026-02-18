@@ -14,7 +14,7 @@
     /* Text */
     --text-primary:     #e6edf3;
     --text-secondary:   #8b949e;
-    --text-muted:       #484f58;
+    --text-muted:       #6e7681;
     --text-link:        #58a6ff;
 
     /* Accent colors */
@@ -28,7 +28,7 @@
     --status-current:   #3fb950;
     --status-active:    #58a6ff;
     --status-inactive:  #8b949e;
-    --status-unused:    #484f58;
+    --status-unused:    #6e7681;
 
     /* Borders */
     --border-default:   #30363d;

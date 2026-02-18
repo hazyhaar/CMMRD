@@ -26,8 +26,9 @@ var KpiRenderer = (function () {
         var container = DomUtils.el('div', { className: 'kpi-container' });
 
         rows.forEach(function (row) {
-            var metric = row.METRIC || row.metric || '';
-            var value = row.VALUE || row.value || '';
+            var metric = row.METRIC != null ? row.METRIC : (row.metric != null ? row.metric : '');
+            var rawVal = row.VALUE != null ? row.VALUE : (row.value != null ? row.value : '');
+            var value = String(rawVal);
 
             var card = DomUtils.el('div', { className: 'kpi-card' });
             card.appendChild(DomUtils.el('div', { className: 'kpi-value' }, value));

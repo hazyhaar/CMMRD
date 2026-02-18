@@ -1,11 +1,10 @@
 -- ============================================================================
 -- COCKPIT_DATA_PKG : dynamic datasource execution with TSV output
 -- Oracle 19c SE2 compatible
--- No VPD: contractor filtering done in PL/SQL via WHERE injection
+-- No VPD: contractor filtering done in PL/SQL via bind-safe WHERE injection
 -- ============================================================================
 
 CREATE OR REPLACE PACKAGE cockpit.cockpit_data_pkg
-AUTHID CURRENT_USER
 AS
     -- Execute a datasource by code, emit TSV
     -- p_desk_id: context desk (for contractor filtering + audit)
@@ -26,6 +25,7 @@ AS
     -- apply_contractor_filter
     -- Builds additional WHERE clause from desk contractor_filter JSON
     -- Returns empty string if no filter or not a contractor desk
+    -- Uses DBMS_ASSERT.ENQUOTE_LITERAL to prevent SQL injection
     -- -----------------------------------------------------------------------
     FUNCTION apply_contractor_filter (
         p_desk_id   IN NUMBER,
@@ -49,23 +49,24 @@ AS
 
         -- Parse filter JSON and build WHERE conditions
         -- Example filter: {"schemas":["HR","SCOTT"], "tablespaces":["TBS_HR"]}
-        -- The actual WHERE depends on the datasource columns
-        -- This is the central security enforcement point
+        -- SECURITY: Each value is validated via DBMS_ASSERT.ENQUOTE_LITERAL
         DECLARE
             l_schemas VARCHAR2(4000);
+            l_val     VARCHAR2(128);
         BEGIN
-            SELECT LISTAGG('''' || val || '''', ',') WITHIN GROUP (ORDER BY val)
+            SELECT LISTAGG(DBMS_ASSERT.ENQUOTE_LITERAL(val), ',')
+                       WITHIN GROUP (ORDER BY val)
             INTO l_schemas
-            FROM JSON_TABLE(l_filter, '$.schemas[*]' COLUMNS (val VARCHAR2(128) PATH '$'));
+            FROM JSON_TABLE(l_filter, '$.schemas[*]' COLUMNS (val VARCHAR2(128) PATH '$'))
+            WHERE val IS NOT NULL
+              AND REGEXP_LIKE(val, '^[A-Za-z0-9_#$]+$');  -- Whitelist: Oracle identifier chars only
 
             IF l_schemas IS NOT NULL THEN
-                -- Only apply schema filter to datasources that have schema-related columns
-                -- Each datasource knows its filterable columns via naming convention
                 l_where := l_where || ' AND (SCHEMA_NAME IN (' || l_schemas || ')'
                         || ' OR USERNAME IN (' || l_schemas || '))';
             END IF;
         EXCEPTION
-            WHEN OTHERS THEN NULL; -- No schemas filter in JSON
+            WHEN OTHERS THEN NULL; -- No schemas filter in JSON or validation failure
         END;
 
         RETURN l_where;
@@ -98,7 +99,7 @@ AS
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
                 cockpit_util_pkg.emit_error(404, 'DS_NOT_FOUND',
-                    'Datasource ' || p_ds_code || ' non trouvee');
+                    'Datasource non trouvee');
                 RETURN;
         END;
 
@@ -107,13 +108,14 @@ AS
             DECLARE
                 l_cat_code VARCHAR2(50);
             BEGIN
-                -- Find catalog_code for this datasource
+                -- Find catalog_code for this datasource (use ROWNUM to avoid TOO_MANY_ROWS)
                 SELECT c.catalog_code INTO l_cat_code
                 FROM cockpit.meta_widget_catalog c
                 WHERE c.datasource_id = (
                     SELECT datasource_id FROM cockpit.meta_data_sources
                     WHERE ds_code = p_ds_code
-                );
+                )
+                AND ROWNUM = 1;
 
                 IF NOT cockpit_auth_pkg.can_use_widget(l_username, p_desk_id, l_cat_code) THEN
                     cockpit_util_pkg.emit_error(403, 'FORBIDDEN', 'Acces refuse a ce widget');
@@ -155,7 +157,7 @@ AS
 
             ELSE
                 cockpit_util_pkg.emit_error(400, 'INVALID_DS_TYPE',
-                    'Type de datasource non supporte: ' || l_ds_type);
+                    'Type de datasource non supporte');
         END CASE;
 
     EXCEPTION
