@@ -134,9 +134,11 @@ var WidgetManager = (function () {
                 WidgetFactory.render(bodyEl, widget, rows);
             })
             .catch(function (err) {
+                // Don't show error for intentionally aborted requests
+                if (err && err.silent) return;
                 DomUtils.clear(bodyEl);
                 bodyEl.appendChild(DomUtils.el('div', { className: 'widget-loading status-danger' },
-                    'Erreur: ' + err.message));
+                    'Erreur: ' + (err.message || 'Inconnue')));
             });
     }
 
@@ -163,7 +165,8 @@ var WidgetManager = (function () {
                     Toast.success('Widget retire');
                 })
                 .catch(function (err) {
-                    Toast.error('Erreur: ' + err.message);
+                    if (err && err.silent) return;
+                    Toast.error('Erreur: ' + (err.message || 'Inconnue'));
                 });
         });
     }
@@ -186,13 +189,15 @@ var WidgetManager = (function () {
         })
         .then(function () {
             Toast.success('Widget ajoute');
+            CatalogPanel.close();
             // Reload current desk/tab
             var deskId = State.get('currentDeskId');
             State.set('currentDeskId', null);
             EventBus.emit('route:change', { deskId: deskId, tabId: tabId });
         })
         .catch(function (err) {
-            Toast.error('Erreur: ' + err.message);
+            if (err && err.silent) return;
+            Toast.error('Erreur: ' + (err.message || 'Inconnue'));
         });
     }
 

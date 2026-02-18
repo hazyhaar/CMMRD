@@ -4,7 +4,7 @@
 'use strict';
 
 var EventBus = (function () {
-    var listeners = {};
+    var listeners = Object.create(null);
 
     function on(event, fn) {
         if (!listeners[event]) listeners[event] = [];

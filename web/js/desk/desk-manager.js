@@ -24,7 +24,8 @@ var DeskManager = (function () {
                 }
             })
             .catch(function (err) {
-                Toast.error('Erreur chargement desks: ' + err.message);
+                if (err && err.silent) return;
+                Toast.error('Erreur chargement desks: ' + (err.message || 'Inconnue'));
             });
     }
 
@@ -89,7 +90,8 @@ var DeskManager = (function () {
                 }
             })
             .catch(function (err) {
-                Toast.error('Erreur chargement desk: ' + err.message);
+                if (err && err.silent) return;
+                Toast.error('Erreur chargement desk: ' + (err.message || 'Inconnue'));
             });
     }
 

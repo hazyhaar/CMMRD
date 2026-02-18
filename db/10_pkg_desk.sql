@@ -5,7 +5,6 @@
 -- ============================================================================
 
 CREATE OR REPLACE PACKAGE cockpit.cockpit_desk_pkg
-AUTHID CURRENT_USER
 AS
     -- List desks accessible by current user
     PROCEDURE get_my_desks;
@@ -73,6 +72,50 @@ END cockpit_desk_pkg;
 
 CREATE OR REPLACE PACKAGE BODY cockpit.cockpit_desk_pkg
 AS
+
+    -- -----------------------------------------------------------------------
+    -- Helper: get desk_id from tab_id and verify user access
+    -- -----------------------------------------------------------------------
+    FUNCTION get_desk_for_tab (
+        p_tab_id    IN NUMBER,
+        p_user      IN VARCHAR2
+    ) RETURN NUMBER
+    IS
+        l_desk_id NUMBER;
+    BEGIN
+        SELECT desk_id INTO l_desk_id
+        FROM cockpit.meta_tabs WHERE tab_id = p_tab_id;
+
+        IF NOT cockpit_auth_pkg.can_access_desk(p_user, l_desk_id) THEN
+            RETURN NULL;
+        END IF;
+        RETURN l_desk_id;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN RETURN NULL;
+    END get_desk_for_tab;
+
+    -- -----------------------------------------------------------------------
+    -- Helper: get desk_id from widget_id and verify user access
+    -- -----------------------------------------------------------------------
+    FUNCTION get_desk_for_widget (
+        p_widget_id IN NUMBER,
+        p_user      IN VARCHAR2
+    ) RETURN NUMBER
+    IS
+        l_desk_id NUMBER;
+    BEGIN
+        SELECT t.desk_id INTO l_desk_id
+        FROM cockpit.meta_widgets w
+        JOIN cockpit.meta_tabs t ON t.tab_id = w.tab_id
+        WHERE w.widget_id = p_widget_id;
+
+        IF NOT cockpit_auth_pkg.can_access_desk(p_user, l_desk_id) THEN
+            RETURN NULL;
+        END IF;
+        RETURN l_desk_id;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN RETURN NULL;
+    END get_desk_for_widget;
 
     -- -----------------------------------------------------------------------
     PROCEDURE get_my_desks
@@ -327,10 +370,14 @@ AS
         p_tab_id    IN NUMBER
     )
     IS
+        l_user    VARCHAR2(128) := cockpit_util_pkg.current_user_name();
         l_desk_id NUMBER;
     BEGIN
-        SELECT desk_id INTO l_desk_id
-        FROM cockpit.meta_tabs WHERE tab_id = p_tab_id;
+        l_desk_id := get_desk_for_tab(p_tab_id, l_user);
+        IF l_desk_id IS NULL THEN
+            cockpit_util_pkg.emit_error(403, 'FORBIDDEN', 'Acces refuse');
+            RETURN;
+        END IF;
 
         cockpit_util_pkg.audit_log(l_desk_id, 'DELETE_TAB');
 
@@ -338,9 +385,6 @@ AS
         COMMIT;
 
         cockpit_util_pkg.emit_json(JSON_OBJECT('status' VALUE 'OK'));
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            cockpit_util_pkg.emit_error(404, 'TAB_NOT_FOUND', 'Onglet non trouve');
     END delete_tab;
 
     -- -----------------------------------------------------------------------
@@ -349,22 +393,33 @@ AS
         p_body_json IN CLOB
     )
     IS
-        l_widget_id NUMBER;
-        l_desk_id   NUMBER;
+        l_user          VARCHAR2(128) := cockpit_util_pkg.current_user_name();
+        l_widget_id     NUMBER;
+        l_desk_id       NUMBER;
+        l_catalog_id    NUMBER;
+        l_widget_title  VARCHAR2(200);
+        l_pos_x         NUMBER;
+        l_pos_y         NUMBER;
+        l_size_w        NUMBER;
+        l_size_h        NUMBER;
+        l_refresh_sec   NUMBER;
+        l_custom_params VARCHAR2(4000);
+        l_default_refresh NUMBER;
     BEGIN
-        SELECT t.desk_id INTO l_desk_id
-        FROM cockpit.meta_tabs t WHERE t.tab_id = p_tab_id;
+        -- Auth check
+        l_desk_id := get_desk_for_tab(p_tab_id, l_user);
+        IF l_desk_id IS NULL THEN
+            cockpit_util_pkg.emit_error(403, 'FORBIDDEN', 'Acces refuse');
+            RETURN;
+        END IF;
 
-        INSERT INTO cockpit.meta_widgets (
-            tab_id, catalog_id, widget_title,
-            position_x, position_y, size_w, size_h, refresh_sec, custom_params
-        )
-        SELECT p_tab_id,
-               jt.catalog_id, jt.widget_title,
-               NVL(jt.pos_x, 0), NVL(jt.pos_y, 0),
-               NVL(jt.size_w, 6), NVL(jt.size_h, 4),
-               NVL(jt.refresh_sec, c.default_refresh_sec),
-               jt.custom_params
+        -- Parse JSON input
+        SELECT jt.catalog_id, jt.widget_title,
+               jt.pos_x, jt.pos_y, jt.size_w, jt.size_h,
+               jt.refresh_sec, jt.custom_params
+        INTO l_catalog_id, l_widget_title,
+             l_pos_x, l_pos_y, l_size_w, l_size_h,
+             l_refresh_sec, l_custom_params
         FROM JSON_TABLE(p_body_json, '$' COLUMNS (
             catalog_id    NUMBER         PATH '$.catalogId',
             widget_title  VARCHAR2(200)  PATH '$.widgetTitle',
@@ -374,9 +429,30 @@ AS
             size_h        NUMBER         PATH '$.sizeH',
             refresh_sec   NUMBER         PATH '$.refreshSec',
             custom_params VARCHAR2(4000) PATH '$.customParams'
-        )) jt
-        JOIN cockpit.meta_widget_catalog c ON c.catalog_id = jt.catalog_id
-        RETURNING widget_id INTO l_widget_id;
+        )) jt;
+
+        -- Get default refresh from catalog if not specified
+        IF l_refresh_sec IS NULL THEN
+            BEGIN
+                SELECT c.default_refresh_sec INTO l_default_refresh
+                FROM cockpit.meta_widget_catalog c
+                WHERE c.catalog_id = l_catalog_id;
+                l_refresh_sec := l_default_refresh;
+            EXCEPTION
+                WHEN NO_DATA_FOUND THEN l_refresh_sec := 30;
+            END;
+        END IF;
+
+        -- INSERT VALUES with RETURNING (valid Oracle syntax)
+        INSERT INTO cockpit.meta_widgets (
+            tab_id, catalog_id, widget_title,
+            position_x, position_y, size_w, size_h, refresh_sec, custom_params
+        ) VALUES (
+            p_tab_id, l_catalog_id, l_widget_title,
+            NVL(l_pos_x, 0), NVL(l_pos_y, 0),
+            NVL(l_size_w, 6), NVL(l_size_h, 4),
+            NVL(l_refresh_sec, 30), l_custom_params
+        ) RETURNING widget_id INTO l_widget_id;
 
         COMMIT;
 
@@ -390,7 +466,16 @@ AS
         p_body_json IN CLOB
     )
     IS
+        l_user    VARCHAR2(128) := cockpit_util_pkg.current_user_name();
+        l_desk_id NUMBER;
     BEGIN
+        -- Auth check
+        l_desk_id := get_desk_for_widget(p_widget_id, l_user);
+        IF l_desk_id IS NULL THEN
+            cockpit_util_pkg.emit_error(403, 'FORBIDDEN', 'Acces refuse');
+            RETURN;
+        END IF;
+
         UPDATE cockpit.meta_widgets
         SET position_x = NVL(JSON_VALUE(p_body_json, '$.positionX' RETURNING NUMBER), position_x),
             position_y = NVL(JSON_VALUE(p_body_json, '$.positionY' RETURNING NUMBER), position_y),
@@ -407,12 +492,15 @@ AS
         p_widget_id IN NUMBER
     )
     IS
+        l_user    VARCHAR2(128) := cockpit_util_pkg.current_user_name();
         l_desk_id NUMBER;
     BEGIN
-        SELECT t.desk_id INTO l_desk_id
-        FROM cockpit.meta_widgets w
-        JOIN cockpit.meta_tabs t ON t.tab_id = w.tab_id
-        WHERE w.widget_id = p_widget_id;
+        -- Auth check
+        l_desk_id := get_desk_for_widget(p_widget_id, l_user);
+        IF l_desk_id IS NULL THEN
+            cockpit_util_pkg.emit_error(403, 'FORBIDDEN', 'Acces refuse');
+            RETURN;
+        END IF;
 
         cockpit_util_pkg.audit_log(l_desk_id, 'REMOVE_WIDGET');
 
@@ -420,9 +508,6 @@ AS
         COMMIT;
 
         cockpit_util_pkg.emit_json(JSON_OBJECT('status' VALUE 'OK'));
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            cockpit_util_pkg.emit_error(404, 'WIDGET_NOT_FOUND', 'Widget non trouve');
     END remove_widget;
 
     -- -----------------------------------------------------------------------
@@ -431,7 +516,19 @@ AS
         p_body_json IN CLOB
     )
     IS
+        l_user VARCHAR2(128) := cockpit_util_pkg.current_user_name();
+        l_cnt  NUMBER;
     BEGIN
+        -- Only desk owner can change permissions
+        SELECT COUNT(*) INTO l_cnt
+        FROM cockpit.meta_desks
+        WHERE desk_id = p_desk_id AND owner_user = l_user;
+
+        IF l_cnt = 0 THEN
+            cockpit_util_pkg.emit_error(403, 'FORBIDDEN', 'Seul le proprietaire peut modifier les permissions');
+            RETURN;
+        END IF;
+
         MERGE INTO cockpit.meta_desk_permissions dp
         USING (
             SELECT p_desk_id AS desk_id,
@@ -501,8 +598,14 @@ AS
         p_max_rows  IN NUMBER DEFAULT 100
     )
     IS
+        l_user VARCHAR2(128) := cockpit_util_pkg.current_user_name();
         l_json CLOB;
     BEGIN
+        IF NOT cockpit_auth_pkg.can_access_desk(l_user, p_desk_id) THEN
+            cockpit_util_pkg.emit_error(403, 'FORBIDDEN', 'Acces refuse');
+            RETURN;
+        END IF;
+
         SELECT JSON_ARRAYAGG(
             JSON_OBJECT(
                 'username'    VALUE a.username,

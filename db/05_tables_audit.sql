@@ -3,7 +3,7 @@
 -- Oracle 19c SE2 compatible
 -- ============================================================================
 
-CREATE SEQUENCE cockpit.seq_audit START WITH 1 INCREMENT BY 1 NOCACHE;
+CREATE SEQUENCE cockpit.seq_audit START WITH 1 INCREMENT BY 1 CACHE 20;
 
 -- ---------------------------------------------------------------------------
 -- META_AUDIT_ACTIONS : application-level audit trail

@@ -95,9 +95,8 @@ var TabManager = (function () {
         ApiClient.post('/api/v1/desks/' + deskId + '/tabs', opts)
             .then(function (resp) {
                 Toast.success('Onglet cree');
-                // Reload desk to get updated tabs
-                EventBus.emit('route:change', { deskId: deskId, tabId: resp.data.tabId });
-                State.set('currentDeskId', null); // Force reload
+                // Force desk reload then navigate to new tab
+                State.set('currentDeskId', null);
                 EventBus.emit('route:change', { deskId: deskId, tabId: resp.data.tabId });
             })
             .catch(function (err) {

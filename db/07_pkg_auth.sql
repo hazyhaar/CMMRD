@@ -5,7 +5,6 @@
 -- ============================================================================
 
 CREATE OR REPLACE PACKAGE cockpit.cockpit_auth_pkg
-AUTHID CURRENT_USER
 AS
     -- Check if user has a given role
     FUNCTION has_role (
@@ -150,6 +149,7 @@ AS
         p_username  IN VARCHAR2
     )
     IS
+        PRAGMA AUTONOMOUS_TRANSACTION;
     BEGIN
         UPDATE cockpit.meta_users
         SET last_login_at = SYSTIMESTAMP

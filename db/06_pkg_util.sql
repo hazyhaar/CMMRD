@@ -4,7 +4,6 @@
 -- ============================================================================
 
 CREATE OR REPLACE PACKAGE cockpit.cockpit_util_pkg
-AUTHID CURRENT_USER
 AS
     -- Emit TSV response via HTP (for ORDS handlers)
     PROCEDURE emit_tsv (
@@ -100,7 +99,9 @@ AS
                 IF l_varchar_val IS NULL THEN
                     l_line := l_line || '\N';
                 ELSE
-                    l_line := l_line || l_varchar_val;
+                    -- Escape tabs and newlines in values to preserve TSV integrity
+                    l_line := l_line || REPLACE(REPLACE(REPLACE(
+                        l_varchar_val, '\', '\\'), CHR(9), '\t'), CHR(10), '\n');
                 END IF;
             END LOOP;
             HTP.P(l_line);
@@ -124,8 +125,9 @@ AS
     )
     IS
     BEGIN
-        OWA_UTIL.MIME_HEADER('application/json; charset=utf-8', TRUE);
+        OWA_UTIL.MIME_HEADER('application/json; charset=utf-8', FALSE);
         OWA_UTIL.STATUS_LINE(p_status);
+        OWA_UTIL.HTTP_HEADER_CLOSE;
         HTP.P(p_json);
     END emit_json;
 
