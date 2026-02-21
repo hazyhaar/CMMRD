@@ -7,7 +7,7 @@ CREATE OR REPLACE PACKAGE cockpit.cockpit_util_pkg
 AS
     -- Emit TSV response via HTP (for ORDS handlers)
     PROCEDURE emit_tsv (
-        p_cursor    IN SYS_REFCURSOR
+        p_cursor    IN OUT SYS_REFCURSOR
     );
 
     -- Emit JSON response via HTP
@@ -54,7 +54,7 @@ AS
     -- NULL rendered as \N
     -- -----------------------------------------------------------------------
     PROCEDURE emit_tsv (
-        p_cursor    IN SYS_REFCURSOR
+        p_cursor    IN OUT SYS_REFCURSOR
     )
     IS
         l_cursor_id     INTEGER;
